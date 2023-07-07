@@ -1,1 +1,2 @@
-"C:\Users\97254\Desktop\C8051F020\project\project.obj"  TO "C:\Users\97254\Desktop\C8051F020\project\project" RS(256) PL(68) PW(78) 
+"C:\Users\97254\Desktop\C8051F020\project\main.obj",
+"C:\Users\97254\Desktop\C8051F020\project\sys.obj"  TO "C:\Users\97254\Desktop\C8051F020\project\project" RS(256) PL(68) PW(78) 
