@@ -1,19 +1,21 @@
 #include "main.h"
 #include "sys.h"
 
-static bufType rx;
-static msgType rxmsg;
-static bufType tx;
-static msgType txmsg;		
+// static bufType rx;
+// static msgType rxmsg;
+// static bufType tx;
+// static msgType txmsg;		
 static timeType time;		
 static u16 dout_timeout_sec[MAX_DIGITAL_PINS];
-static u16 dout_timeout_ms[MAX_DIGITAL_PINS];
-static u8 var128[128];
+// static u16 dout_timeout_ms[MAX_DIGITAL_PINS];
+// static u8 var128[128];
 static bit flag_1sec;	//stores array of 40-bits 
 
 void Main (void){		
 	u16 i;
-	{//initialization section
+	
+	/* hardware boot section*/
+	{
 
 		{//WatchDog Disable
 				EA=0;
@@ -187,15 +189,15 @@ void Main (void){
 
 		}//DAC[0..1]
 	
-		{//clock init
-			time.us=0L;
-			time.ms=0L;
-			time.sec=0x0L;
+		// {//clock init
+		// 	time.us=0L;
+		// 	time.ms=0L;
+		// 	time.sec=0x0L;
 			
-			for(i=0;i<MAX_DIGITAL_PINS;i++){
-				dout_timeout_sec[i]=0;
-			}
-		}
+		// 	for(i=0;i<MAX_DIGITAL_PINS;i++){
+		// 		dout_timeout_sec[i]=0;
+		// 	}
+		// }
 		{//Interrupts and CPU stack 
 			SP=0x30;	//stack initiale offset
 			
@@ -208,7 +210,7 @@ void Main (void){
 		{//FLASH
 			FLASH_Load();
 		}		
-	}//initialization section
+	}
 	while(1){
 		WDTCN=0xAD;
 		if(flag_1sec){

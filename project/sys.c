@@ -130,7 +130,6 @@ void Rx_init(void){
 		rx.buf[rx.idx]=0;
 	}
 	rx.idx=0;
-	// rxmsg.
 }
 
 void Tx_init(void){
@@ -584,7 +583,34 @@ u16  get_ain(u8 ch,u8 gain){
 	return reg16;
 }
 
-
+/* application clock 1khz,T=1ms, function_duration~0.1[ms] */
+void _INT16Clock(void){
+	u8 i;
+	T4CON&=~0x80; 	//clear TF4 interrupt flag
+	WDTCN=0xAD;
+	WDTCN=0xFF;
+	{
+		time.ms++;			
+		for(i=0;i<MAX_DIGITAL_PINS;i++){	//process dout timeout 
+			if(dout_timeout_sec[i]>0){		//check if digital pin have a timeout counter
+				dout_timeout_ms[i]++;
+				if(dout_timeout_ms[i]>999){
+					dout_timeout_ms[i]=0;
+					dout_timeout_sec[i]--;
+					if(dout_timeout_sec[i]==0){
+						set_dout(i,FALSE);	//set digital pin to high-z (OFF)
+					}				
+				}	
+			}
+		}
+		if(time.ms>999){		//increas timer_sec
+			time.ms=0;		
+			time.sec++;
+			flag_1sec=1;
+		}
+	}
+}
+/* application control communication */
 void _INT4Uart0 (void){
 
 	u8 ch;
@@ -931,37 +957,10 @@ void _INT4Uart0 (void){
 
 				}break;	
 			
-			}//switch(BB)
-		}//(rxmsg.addr==0xAA)	
+			}
+		}
 	}
 
 	EA=1;
 }
 
-/*app clock 1khz,T=1ms, function_duration~0.1[ms] */
-void _INT16Clock(void){
-	u8 i;
-	T4CON&=~0x80; 	//clear TF4 interrupt flag
-	WDTCN=0xAD;
-	WDTCN=0xFF;
-	{
-		time.ms++;			
-		for(i=0;i<MAX_DIGITAL_PINS;i++){	//process dout timeout 
-			if(dout_timeout_sec[i]>0){		//check if digital pin have a timeout counter
-				dout_timeout_ms[i]++;
-				if(dout_timeout_ms[i]>999){
-					dout_timeout_ms[i]=0;
-					dout_timeout_sec[i]--;
-					if(dout_timeout_sec[i]==0){
-						set_dout(i,FALSE);	//set digital pin to high-z (OFF)
-					}				
-				}	
-			}
-		}
-		if(time.ms>999){		//increas timer_sec
-			time.ms=0;		
-			time.sec++;
-			flag_1sec=1;
-		}
-	}
-}
