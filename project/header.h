@@ -73,6 +73,8 @@ sbit	UART_WRITE_ENABLE		=	P0^3;	//write max3086 enable(active high)
 #define TX_BUFFER_SIZE 	16
 #define RX_START_FRAME  '>'		//pc(tx)->mcu(rx)
 #define RX_STOP_FRAME  	10		//'\n'
+#define RX_ADDRESS_CHAR  	1
+#define RX_COMMAND_CHAR  	3
 // #define RX_STOP_FRAME  	'>'		//pc(tx)->mcu(rx)
 #define TX_START_FRAME 	'#'		//pc(rx)<-mcu(tx)
 #define TX_STOP_FRAME 	10		//'\n'

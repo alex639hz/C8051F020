@@ -894,46 +894,36 @@ void INT4Uart0 (void) interrupt 4 using 2 {
 	u8 tmp_4;
 	
 	EA=0;
+
 	// set_dout(8,1);
 	if(RI0){	
 		RI0=0;			//reset interrupt bit
 		ch=SBUF0;		//copy register		
-		if((rx.idx>0)&&(rx.idx<RX_BUFFER_SIZE)&&((ch>='0'&&ch<='9')||(ch>='A'&&ch<='F'))){	//detect valid char
+		if((rx.idx<0)||(rx.idx>=RX_BUFFER_SIZE)){
+			Rx_init();
+			return;
+		}
+		else if(((ch>='0'&&ch<='9')||(ch>='A'&&ch<='F'))){	//detect valid char
 			rx.buf[rx.idx++]=ch;	
 		}	
-		else if(ch==RX_START_FRAME){			//detect rx_frame START 
-			Rx_init();							//init rx_buffer pointer&rx_idx
-			rx.buf[0]=RX_START_FRAME;		//read char into rx_buffer and increament pointer
-			rx.idx=1;
+		else if(ch==RX_START_FRAME){ 
+			Rx_init();
+			rx.buf[rx.idx++]=RX_START_FRAME;
 		}			
-		else if(ch==RX_STOP_FRAME && 4<rx.idx && rx.idx<RX_BUFFER_SIZE){//detect END verify error rx_idx minmimum char =4  <aabb>			
-			// rxmsg.xor=rx.buf[3];	//start xoring from address offset 3  <AABBCCDD..>
-			// for(i=4;i<=rx.idx;i++){ //continue xoring until rx.idx from offset 4
-				// rxmsg.xor^=rx.buf[i];}
-			// if(rxmsg.xor==Rx_get_u8(1)){	//xor test <xx...>
-				// rx.buf[rx.idx++]=RX_STOP_FRAME;	
-				// rxmsg.size=rx.size=rx.idx;
-				// rx_finish=1;
-			// }
-			// else{//xor test failed
-				// Rx_init();
-			// }	
+		else if(ch==RX_STOP_FRAME){
 			rx.sum=Rx_get_u8(rx.idx-2);
 			rx.buf[rx.idx++]=RX_STOP_FRAME;
 			rx.size=rx.idx;
-			val=0;
-			
-			for(i=1;i<rx.size-3;i++){
-				val+=rx.buf[i];
-			}
-			
 			rx_finish=1;		
+			// val=0
+			// for(i=1;i<rx.size-3;i++){
+			// 	val+=rx.buf[i];
+			// }
 		}
-		else{//xor test failed
+		else{
 			Rx_init();
-		}
-		
-	}//if(RI0)
+		}	
+	}
 
 	if(TI0){
 		TI0=0;
@@ -945,29 +935,16 @@ void INT4Uart0 (void) interrupt 4 using 2 {
 			// RE=DE=0;	//max3086_enable_read
 			// UART_READ_DISABLE=UART_WRITE_ENABLE=FALSE;	//enable read
 		}
-	}//if(TI0)
+	}
 	
 	if(rx_finish){	
 		rx_finish=0;
-		rxmsg.addr=Rx_get_u8(1); //addr index 	<AABB..>
-		rxmsg.type=Rx_get_u8(3);	//type index <AABB..>
-		
-		
-		// tmp_1=rxmsg.addr==ADDRESS_PORT?1:0;
-		// tmp_2=rxmsg.addr==VIRTUAL_ADDRESS?1:0;
-		// tmp_3=0x80==ADDRESS_PORT?1:0;
-
-		
-		// if((rxmsg.addr==ADDRESS_PORT || 0x80==ADDRESS_PORT)&&ADDRESS_PORT || (rxmsg.addr==VIRTUAL_ADDRESS)&&VIRTUAL_ADDRESS){	//rx_msg_address
-	
-		// if(VIRTUAL_ADDRESS?(rxmsg.addr==VIRTUAL_ADDRESS || 0xFF==VIRTUAL_ADDRESS):(rxmsg.addr==ADDRESS_PORT)){	//rx_msg_address
-		// if((rxmsg.addr==ADDRESS_PORT)){	//rx_msg_address
-		// if(ADDRESS_PORT==0x80?rxmsg.addr==VIRTUAL_ADDRESS:rxmsg.addr==ADDRESS_PORT){	//read virtual address ONLY IF phisical address == 0x80
-		// if(ADDRESS_PORT==0x80?(rxmsg.addr==var128[VAR128_VADDR]||var128[VAR128_VADDR]==0xff):rxmsg.addr==ADDRESS_PORT){
+		rxmsg.addr=Rx_get_u8(RX_ADDRESS_CHAR);
+		rxmsg.type=Rx_get_u8(RX_COMMAND_CHAR);	
 		if((rxmsg.addr==var128[VAR128_VADDR])||(var128[VAR128_VADDR]==0xff)){
-			switch(rxmsg.type){	//rx_msg_type
+			switch(rxmsg.type){
 				case 0xBB :{	//loop-back		<AABB...>		
-					Loopback();//copy rx to tx 
+					Loopback();
 				}break;			
 				case 0x11 :{	//set dout		<AA11aabbccdd>		
 					if(rx.size==14){								
@@ -1260,8 +1237,7 @@ void INT4Uart0 (void) interrupt 4 using 2 {
 			
 			}//switch(BB)
 		}//(rxmsg.addr==0xAA)	
-	}//if(rx_finish)
-	
-	// set_dout(8,0);
+	}
+
 	EA=1;
 }
