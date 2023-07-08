@@ -4,9 +4,9 @@
 void Main (void){		
 	/* hardware boot section*/
 	{
-
+		EA=0;
+		
 		{//WatchDog Disable
-				EA=0;
 				WDTCN=0xDE;
 				WDTCN=0xAD;
 		}
@@ -156,30 +156,23 @@ void Main (void){
 
 		}//DAC[0..1]
 	
-		// {//clock init
-		// 	time.us=0L;
-		// 	time.ms=0L;
-		// 	time.sec=0x0L;
-			
-		// 	for(i=0;i<MAX_DIGITAL_PINS;i++){
-		// 		dout_timeout_sec[i]=0;
-		// 	}
-		// }
 		{//Interrupts and CPU stack 
 			SP=0x30;	//stack initiale offset
 			
 			PS0=1;		//uart ISR gets high priority
 			ES0=1;		//uart0_enable_interrupt
 			EIE2|=0X04;	//ENABLE timer4 INTERRUPT
-			EA=1;
 		}	
 
 		{//FLASH
 			FLASH_Load();
-		}		
+		}	
+			
+		EA=1;
 	}
+
 	while(1){
-		WDTCN=0xAD;	
+		_WatchdogResetAndEnable();
 	}
 }
 

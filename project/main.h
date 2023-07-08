@@ -72,9 +72,9 @@ typedef struct bufType{
 	u8 idx;
 	u8 size;
 	u8 sum;
-	u8 buf[32];
-	
+	u8 buf[32];	
 }bufType;
+
 typedef struct msgType{
 	u8 xor;
 	u8 size;
@@ -85,6 +85,7 @@ typedef struct msgType{
 	u8 t1;
 	u8 t2;
 }msgType;
+
 typedef struct timeType{
 	u16 ms;
 	u16 sec;

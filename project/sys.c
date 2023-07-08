@@ -560,9 +560,8 @@ u16  get_ain(u8 ch,u8 gain){
 	return reg16;
 }
 
-void ClearWatchdog(){
-	WDTCN=0xAD;
-	WDTCN=0xFF;
+void _WatchdogResetAndEnable(){
+	WDTCN=0xA5;
 }
 
 void DoutTimeoutMSCounter(void){
@@ -691,7 +690,67 @@ void CommandProcessor(){
 				FLASH_Save();
 				Loopback();			
 			}		
-		}break;									
+		}break;			
+		case 0x20 :{	//set time.sec	<AA20aabbccdd>	
+			if(rx.size==14){	
+				u8 tmp[4];
+				time.sec=0;
+
+				//read value from msg 
+				tmp[0]=(u8)Rx_get_u8(5);
+				tmp[1]=(u8)Rx_get_u8(7);
+				tmp[2]=(u8)Rx_get_u8(9);
+				tmp[3]=(u8)Rx_get_u8(11);						
+				
+				//set clock
+				time.sec=0x0L;
+				time.sec+=(tmp[0]+0x0000L)<<24;
+				time.sec+=(tmp[1]+0x0000L)<<16;
+				time.sec+=(tmp[2]+0x0000L)<<8;
+				time.sec+=(tmp[3]+0x0000L);							
+			
+				//read clock
+				tmp[0]=(u8)(time.sec>>24);
+				tmp[1]=(u8)(time.sec>>16);
+				tmp[2]=(u8)(time.sec>>8);
+				tmp[3]=(u8)(time.sec>>0);
+				
+				Tx_init();
+				
+				TxBufSetU8Value(1,tmp[0]);	//cc
+				TxBufSetU8Value(3,tmp[1]);	//dd
+				TxBufSetU8Value(5,tmp[2]);	//ee
+				TxBufSetU8Value(7,tmp[3]);	//ff
+				
+				tx.buf[9]=TX_STOP_FRAME;
+				tx.buf[0]=TX_START_FRAME;
+				tx.size=10;
+				tx.idx=0; //init before transmition
+				TI0=1; //start transmition
+			}			
+		}break;				
+		case 0x21 :{	//get time.sec	<xxAA21>, tx={ccddeeff}
+			u8 tmp[4];
+			//read clock
+			tmp[0]=(u8)(time.sec>>24);
+			tmp[1]=(u8)(time.sec>>16);
+			tmp[2]=(u8)(time.sec>>8);
+			tmp[3]=(u8)(time.sec>>0);
+			
+			Tx_init();	//resets tx_buffer[] and tx_idx	
+			
+			TxBufSetU8Value(1,tmp[0]);	//cc
+			TxBufSetU8Value(3,tmp[1]);	//dd
+			TxBufSetU8Value(5,tmp[2]);	//ee
+			TxBufSetU8Value(7,tmp[3]);	//ff
+			
+			tx.buf[9]=TX_STOP_FRAME;
+			tx.buf[0]=TX_START_FRAME;
+			tx.size=10;
+			tx.idx=0; //init before transmition
+			TI0=1; //start transmition
+		}break;
+						
 		case 0x22: { //set value in scratch, index range is [00..99]		<AA22aabb\n -> {AA22aabb}
 			if(rx.size==10){	
 				u8 idx;
@@ -723,7 +782,6 @@ void CommandProcessor(){
 void _INT16Clock(void){
 	u8 i;
 	T4CON&=~0x80; //clear TF4 interrupt flag
-	ClearWatchdog();
 	time.ms++;			
 	DoutTimeoutMSCounter();
 	if(time.ms>999){ //increas timer_sec

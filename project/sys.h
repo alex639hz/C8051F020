@@ -3,5 +3,6 @@
 
 void _INT4Uart0 (void);
 void _INT16Clock (void);
+void _WatchdogResetAndEnable();
 
 #endif
