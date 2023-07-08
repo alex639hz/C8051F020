@@ -1,19 +1,7 @@
 #include "main.h"
 #include "sys.h"
 
-// static bufType rx;
-// static msgType rxmsg;
-// static bufType tx;
-// static msgType txmsg;		
-static timeType time;		
-static u16 dout_timeout_sec[MAX_DIGITAL_PINS];
-// static u16 dout_timeout_ms[MAX_DIGITAL_PINS];
-// static u8 var128[128];
-static bit flag_1sec;	//stores array of 40-bits 
-
 void Main (void){		
-	u16 i;
-	
 	/* hardware boot section*/
 	{
 
@@ -24,31 +12,25 @@ void Main (void){
 		}
 		
 		{//XOSC
+			u16 idx;
 			OSCXCN = 0x67;				//XOSC Mode=Crystal oscillator mode, freq>6.7 MHZ 
 			
-			for(i=2000; i>0 ;i--);		//1ms delay(2MHZ Clock)
+			for(idx=2000; idx>0 ;idx--);		//1ms delay(2MHZ Clock)
 				
 			while(!(OSCXCN & 0x80)); 	//poll XTLVLD=>'1' 		
 			OSCICN =0x08;				//Clock Select = external osc
 		}	
 			
-		{//timers
+		{//timers 
 		
-			// TIMER3 - for dht22 and int_0	
-			// TMR3=TMR3RL=0;
-			// TMR3CN=0x00;	
-			// TMR3CN=0x04;	//run timer3 when from inside int0 
+			//TIMER4 - 1khz general clock, Timer4_ISR		
+			TMR4=RCAP4=-22118;	//TMR4=RCAP4=-SYSCLK/T4CLK;
 			
-			
-			//TIMER4 - general clock, Timer4_ISR		
-			TMR4=RCAP4=-22118;	//0x5666	//1ms cycle
-			// TMR4=RCAP4=-SYSCLK/T4CLK;
-			CKCON|=0x40;						//set T4M=1 (timer4 is timer function and uses system clk)
+			CKCON|=0x40; //set (T4M=1) timer4 as timer with system clk)
 			
 			T4CON|=0x04; //set TR4 bit - start timer4
 
 			//TIMER1 - clock for uart0 
-		
 			CKCON|=0x10;						//set T1M=1 (timer1 uses system clk)			
 			TMOD |=0x20;						//timer1 mode2 - 8bit autoreload .		
 			TH1=-SYSCLK/16L/BAUDRATE;			// TH1=-12;			
@@ -66,27 +48,12 @@ void Main (void){
 			Rx_init();
 			Tx_init();
 			
-		}//UART0
+		}
 		
 		{//PORTS
-		
-		
-			// #define PORT_IN_P69			P2		
-			// #define PORT_IN_DIP_SWITCH 	P3
-			// #define PORT_OUT_P70	 		P4					
-			// #define PORT_OUT_P71	 		P5				
-			// #define PORT_IN_P63			P6				
-			// #define PORT_IN_P68			P7			//rotation switches port	
-
-			
-			// P0MDOUT |=0x0d;				//P0.0(TX0),P0.2(RE_),P0.3(DE) are push-pull. support GPRIO boards
-			// P0MDOUT =0x0d;				//P0.0(TX0),P0.2(RE_),P0.3(DE) are push-pull. support GPRIO boards
-			P0MDOUT |= 0x01;                    // Set TX0(P0.0) port pin to push-pull
-		
-			//analog inputs P1(ADC1)
-			
-			P1MDOUT=0x0;	//set open-drain mode on P1
-			P1MDIN=0x0;		//set analog input mode
+			P0MDOUT |= 0x01; // Set P0.0 as push-pull	for uart0 TX @
+			P1MDOUT=0x0; //set open-drain mode on P1
+			P1MDIN=0x0;	//set analog input mode
 			
 			// P1MDOUT |= 0x40;    //Enable P1.6 (LED) as push-pull output.					
 			//*digital inputs P3,P6,P7
@@ -212,10 +179,7 @@ void Main (void){
 		}		
 	}
 	while(1){
-		WDTCN=0xAD;
-		if(flag_1sec){
-			flag_1sec=0;
-		}		
+		WDTCN=0xAD;	
 	}
 }
 

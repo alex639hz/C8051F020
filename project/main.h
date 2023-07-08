@@ -35,83 +35,24 @@
 #define BYTELOW(v)   (*(((unsigned char *) (&v) + 1)))
 #define BYTEHIGH(v)  (*((unsigned char *) (&v)))
 
+#define RX_BUFFER_SIZE 16
+#define TX_BUFFER_SIZE 16
+#define RX_START_FRAME '>'		//pc(tx)->mcu(rx)
+#define RX_STOP_FRAME 10		//'\n'
+#define TX_START_FRAME '#'		//pc(rx)<-mcu(tx)
+#define TX_STOP_FRAME 10		//'\n'
+#define RX_ADDRESS_CHAR 1
+#define RX_COMMAND_CHAR 3
+#define RX_COMMAND_IDX 5
+#define RX_COMMAND_VALUE 7
 
-
-//GPRIO SETUP::::::::::::::::::::::::::::::::::::
-
-//old configurations
-// #define PORT_IN_P69				P2	[0..7]	
-// P3 definition see DEBBUG section
-// #define PORT_IN_DIP_SWITCH 		P3
-// #define PORT_OUT_P70	 			P4					
-// #define PORT_OUT_P71	 			P5				
-// #define PORT_IN_P63				P6	[8..15]			
-// #define PORT_IN_P68				P7	[16..23]		//rotation switches port	
-
-//C8051F020KIT SETUP::::::::::::::::::::::::::::
-/*
-#define MAX_DOUT_PINS	16	//digital output
-#define MAX_DIN_PINS	24	//digital output
-#define DIN_PORT_0	P2	//MOLEX_P69
-#define DIN_PORT_1	P3	//DIP SWITCH
-#define DIN_PORT_2	P6	//MOLEX_P63
-#define DIN_PORT_3	P7	//MOLEX_P68
-#define DOUT_PORT_0	P4	//MOLEX_P70/P72
-#define DOUT_PORT_1	P5	//MOLEX_P71/P73
-#define DOUT_PORT_2	P5
-#define DOUT_PORT_3	P5
-#define ADDRESS_PORT	P3
-sbit	UART_READ_DISABLE		=	P0^2;	//read max3086 enable(active low)
-sbit	UART_WRITE_ENABLE		=	P0^3;	//write max3086 enable(active high)
-*/
-//C8051F020KIT SETUP::::::::::::::::::::::::::::
-
-
-
-// rx string  "<aa,bb,cc,dd,ee,ff,..>"
-#define RX_BUFFER_SIZE 	16
-#define TX_BUFFER_SIZE 	16
-#define RX_START_FRAME  '>'		//pc(tx)->mcu(rx)
-#define RX_STOP_FRAME  	10		//'\n'
-#define RX_ADDRESS_CHAR  	1
-#define RX_COMMAND_CHAR  	3
-// #define RX_STOP_FRAME  	'>'		//pc(tx)->mcu(rx)
-#define TX_START_FRAME 	'#'		//pc(rx)<-mcu(tx)
-#define TX_STOP_FRAME 	10		//'\n'
-// #define TX_STOP_FRAME 	'}'		//pc(rx)<-mcu(tx)
-
-/*var128 is a variables array of 128 bytes which is a buffer for scratch pad memory area*/
-	
+/*var128 is a 128bytes buffer for flash memory*/
 #define	VAR128_VADDR	0		
+#define	SCRATCH_MEM_OFFSET	28		
 #define	VAR128_SN_0		1		
 #define	VAR128_SN_1		2	
 #define	VAR128_SN_2		3
 #define	VAR128_SN_3		4
-
-
-//P0 uart and other io
-//P1 ADC1(x8)+ADC0(x8)+DAC(x2)  //16 ain , 2 aout
-//P2 GPIO in					//24 din
-//P3 GPIO in
-//P4 GPIO in
-//P5 GPIO out					//24 dout
-//P6 GPIO out
-//P7 GPIO out
-// #define LOWBYTE(v)   ((unsigned char) (v))
-// #define HIGHBYTE(v)  ((unsigned char) (((unsigned int) (v)) >> 8))
-/*void test (void)  {
-	// unsigned int  x;
-	// unsigned char cl, ch;
-	// cl = LOWBYTE(x);
-	// ch = HIGHBYTE(x);
-}*/
-
-
-
-/*void test1 (void)  {
-  BYTELOW(x) = BYTEHIGH(x);
-  BYTEHIGH (x) = 5;
-}*/
 
 typedef unsigned char 	u8;
 typedef signed   char 	s8;
@@ -119,7 +60,6 @@ typedef unsigned int  	u16;
 typedef signed   int  	s16;
 typedef unsigned long  	u32;
 typedef signed   long  	s32;
-
 
 typedef struct bufType{
 	u8 idx;
@@ -139,50 +79,13 @@ typedef struct msgType{
 	u8 t2;
 }msgType;
 typedef struct timeType{
-	u16 us;
 	u16 ms;
 	u16 sec;
 }timeType;
-typedef struct timerType{
-	u16 ms;
-	u16	sec;
-}timerType;
-
-
-
-
-// typedef struct stageType{
-	// u8 mode;	//function
-	// u8 out;		//pointer for output (using u8 index)
-	// u8 in;		//pointer for input (using u8 index)
-	// u8 num;		//u8 variable
-	// u8 sec;		//time parameter in seconds
-// }stageType;
-// typedef struct procType{	
-	// stageType stages[STAGES];
-	//// u8 title;
-	// u8 			idx_stage;	//pointing the next stage to execute
-	// u8 			idx_size;	//actual number of stages
-	// u8 			mode;
-	// timerType 	timer;
-	// u8 			run;
-	
-// }procType;
-
-
-
-/*##########################################################################*/
-//variables:
-
-
-
-// sbit	RE		=	P0^2;				//read max3086 enable(active low)
-// sbit	DE		=	P0^3;				//write max3086 enable(active high)
-
-
-
-/*##########################################################################*/
-// function prototypes:
+// typedef struct timerType{
+// 	u16 ms;
+// 	u16	sec;
+// }timerType;
 
 void Tx_init	();
 void Tx_set		(u8 i,u8 var);
@@ -190,7 +93,7 @@ void Rx_init	();
 void Loopback	();
 void SendConstMsg(u16 *pmsg);
 
-void Rxmsg_dout_wr	(/*rxmsg*/);
+void Rxmsg_dout_wr	();
 u16 Conv_u8_to_str	(u8 val);
 u8 	Conv_str_to_u8	(u16 str2);
 u8	Conv_ascii_to_int		(u8 ch);

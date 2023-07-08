@@ -7,8 +7,7 @@ static msgType txmsg;
 static timeType time;		
 static u16 dout_timeout_sec[MAX_DIGITAL_PINS];
 static u16 dout_timeout_ms[MAX_DIGITAL_PINS];
-static u8 var128[128];
-static bit flag_1sec;	//stores array of 40-bits 
+static u8 flashMemBuf[128];
 
 void SendConstMsg(u16 *pmsg){	//send err_msg_x
 	// long code * idata powtab;      /* ptr in idata to code long */
@@ -23,7 +22,7 @@ void SendConstMsg(u16 *pmsg){	//send err_msg_x
 		}		
 		tx.buf[++tx.idx]=TX_STOP_FRAME;
 		tx.buf[0]=TX_START_FRAME;
-		tx.size=tx.idx;
+		// tx.size=tx.idx;
 		tx.idx=0; 	//transmition will use tx.idx )in TI0 case
 		TI0=1;		//start transmition
 	}
@@ -40,30 +39,30 @@ void Loopback(){//loop back input or send msg
 	}
 	tx.buf[i]=TX_STOP_FRAME;
 	tx.buf[0]=TX_START_FRAME;
-	tx.size=i+1;
+	// tx.size=i+1;
 	tx.idx=0; 	//transmition will use tx.idx )in TI0 case
 	TI0=1;		//start transmition
 
 }//Loopback
 	
-void Rxmsg_dout_wr(/*rxmsg*/){
+void Rxmsg_dout_wr(){
 
 	if(rxmsg.idx<MAX_DIGITAL_PINS){		
 		dout_timeout_sec[rxmsg.idx]=((u16)rxmsg.t1)<<8;
 		dout_timeout_sec[rxmsg.idx]+=rxmsg.t2;	
 		set_dout(rxmsg.idx,rxmsg.val);	
 	}
-}//Rxmsg_dout_wr()
-	
-u8 	Rx_get_u8(u8 i){				//returns "FF" ascii value from tx_buffer start at index
+}
+
+u8 	GetU8FromRxBuf(u8 i){				//returns "FF" ascii value from tx_buffer start at index
 	
 	return (Conv_ascii_to_int(rx.buf[i])<<4)+(Conv_ascii_to_int(rx.buf[i+1]));
 }
 
-void Tx_set(u8 i,u8 var){		//set tx.buf after converting u8 to "xx" str
-	u16 prm=Conv_u8_to_str(var);	
-	tx.buf[i]=BYTEHIGH(prm);
-	tx.buf[i+1]=BYTELOW(prm);
+void TxBufSetU8Value(u8 idx,u8 _u8value){		//set tx.buf after converting u8 to "xx" str
+	u16 prm=Conv_u8_to_str(_u8value);	
+	tx.buf[idx]=BYTEHIGH(prm);
+	tx.buf[idx+1]=BYTELOW(prm);
 }
 
 u8 	Conv_ascii_to_int(u8 ch){	//converts ascii['0',..'9','A',..'F'] to int[0..15], returns 0xff if failed
@@ -247,7 +246,7 @@ void FLASH_Save(){
 	
 	FLASH_PageErase(0,1);
 	for(i=0;i<128;i++){
-		FLASH_ByteWrite(i,var128[i],1);
+		FLASH_ByteWrite(i,flashMemBuf[i],1);
 	}
 	
 
@@ -257,7 +256,7 @@ void FLASH_Load(){
 	u8 i;
 	
 	for(i=0;i<128;i++){
-		var128[i]=FLASH_ByteRead(i,1);
+		flashMemBuf[i]=FLASH_ByteRead(i,1);
 	}	
 }
 
@@ -410,8 +409,7 @@ bit  get_din(u8 idx){
 		}
 	}
 	return 0;
-
-}//get_din()
+}
 
 bit  get_dout(u8 idx){ 	
 	u8 bitmask;
@@ -467,7 +465,7 @@ bit  get_dout(u8 idx){
 	}
 	return 0;
 
-}//get_din()
+}
 
 u16  get_ain_adc0(u8 ch0,u8 gain){	//read adc0 channel
 	u16 reg16=0L;
@@ -492,7 +490,7 @@ u16  get_ain_adc0(u8 ch0,u8 gain){	//read adc0 channel
 		
 	}//if((ch<=0)&&(cn<=7))
 	return reg16;	
-}//get_ain_adc0()
+}
 
 u8   get_ain_adc1(u8 ch1,u8 gain){	//read adc0 channel
 	u16 reg16=0L;
@@ -542,7 +540,7 @@ u8   get_ain_adc1(u8 ch1,u8 gain){	//read adc0 channel
 		// BYTELOW(adc0)	=  	((unsigned char) (ADC0));
 	}//if((ch<=0)&&(cn<=7))
 	return reg16;	
-}//get_ain_adc0()
+}
 
 u16  get_ain(u8 ch,u8 gain){
 	u16 reg16=0L;
@@ -583,6 +581,259 @@ u16  get_ain(u8 ch,u8 gain){
 	return reg16;
 }
 
+void CommandProcessor(){
+	u16 val_16;
+	u8 tmp[4];
+	
+	switch(rxmsg.type){
+		case 0xBB :{	//loop-back		<AABB...>		
+			Loopback();
+		}break;			
+		case 0x11 :{	//set dout		<AA11aabbccdd>		
+			if(rx.size==14){								
+			rxmsg.idx=GetU8FromRxBuf(RX_COMMAND_IDX);		//dout(aa)
+			rxmsg.val=GetU8FromRxBuf(RX_COMMAND_VALUE);		//value(bb)
+			rxmsg.t1=GetU8FromRxBuf(9);		//timer_high(cc)
+			rxmsg.t2=GetU8FromRxBuf(11);		//timer_low(dd)
+
+			if(rxmsg.idx<MAX_DIGITAL_PINS){		
+				dout_timeout_sec[rxmsg.idx]=((u16)rxmsg.t1)<<8;
+				dout_timeout_sec[rxmsg.idx]+=rxmsg.t2;	
+				dout_timeout_ms[rxmsg.idx]=0;	
+				set_dout(rxmsg.idx,rxmsg.val);	
+			}
+
+			Loopback();				//copy rx to tx 	
+			}
+			
+		}break;							
+		case 0x13 :{	//get_ain		<AA13aabb> -> {qqww}
+			if(rx.size==10){								
+				rxmsg.idx	= GetU8FromRxBuf(5);	//(aa)	analog input
+				rxmsg.t1 = GetU8FromRxBuf(7);	//(bb)	analog gain1(000),2(001),4(010),8(011),16(10x),0.5(11x)
+				val_16 = get_ain(rxmsg.idx,rxmsg.t1);
+				Tx_init();	//resets tx_buffer[] and tx_idx	
+				Rx_init();	//resets tx_buffer[] and tx_idx	
+				TxBufSetU8Value(1,BYTEHIGH(val_16));	//qq
+				TxBufSetU8Value(3,BYTELOW(val_16));	//ww			
+				tx.buf[5]=TX_STOP_FRAME;
+				tx.buf[0]=TX_START_FRAME;
+				// tx.size=6;
+				tx.idx=0; 	//transmition will use tx.idx )in TI0 case
+				TI0=1;		//start transmition					
+			}
+
+		}break;					
+		case 0x14 :{	//get_din		<AA14aa> -> {qq}
+							// read_ain()
+							// convert_to_ascii()
+							// send_string()
+			if(rx.size==8){								
+				rxmsg.idx	=GetU8FromRxBuf(5);		//digital input(aa)						
+				Tx_init();	//resets tx_buffer[] and tx_idx	
+				tx.buf[0]=TX_START_FRAME;
+				TxBufSetU8Value(1,get_din(rxmsg.idx)? 0x01 : 0x00);		//qq												
+				tx.buf[3]=TX_STOP_FRAME;
+				// tx.size=4;
+				tx.idx=0; 	//transmition will use tx.idx )in TI0 case
+				TI0=1;		//start transmition					
+			}				
+		}break;					
+		case 0x15 :{	//set_aout		<AA15aabbcc> 
+			if(rx.size==12){								
+				rxmsg.idx			=GetU8FromRxBuf(5);		//analog output(aa)
+				BYTEHIGH(val_16)	=GetU8FromRxBuf(7);		//analog high register 0x[0..F](bb)
+				BYTELOW(val_16)		=GetU8FromRxBuf(9);		//analog low register 0x[0..FF](ccc)
+				
+				set_aout(rxmsg.idx,val_16);
+				
+				Tx_init();	//resets tx_buffer[] and tx_idx	
+				TxBufSetU8Value(1,BYTEHIGH(val_16));	//qq
+				TxBufSetU8Value(3,BYTELOW(val_16));	//ww			
+				tx.buf[5]=TX_STOP_FRAME;
+				tx.buf[0]=TX_START_FRAME;
+				// tx.size=6;
+				tx.idx=0; 	//transmition will use tx.idx )in TI0 case
+				TI0=1;		//start transmition					
+			}
+
+		}break;
+		case 0x16 :{	//get_digital ports <AA16> -> {kkllmmnnoopp}							
+			if(rx.size==6){									
+				Tx_init();	//resets tx_buffer[] and tx_idx	
+				tx.buf[0]=TX_START_FRAME;
+				
+				// DIG_PORT_0=0x0;
+				// DIG_PORT_0=0xff;
+				TxBufSetU8Value(1,DIG_PORT_0);		//kk:DIG_PORT_0
+				// DIG_PORT_1=0x0;
+				// DIG_PORT_1=0xff;
+				TxBufSetU8Value(3,DIG_PORT_1);		//ll:DIG_PORT_1
+				// DIG_PORT_2=0x0;
+				// DIG_PORT_2=0xff;
+				TxBufSetU8Value(5,DIG_PORT_2);		//mm:DIG_PORT_2
+				// DIG_PORT_3=0x0;
+				// DIG_PORT_3=0xff;
+				TxBufSetU8Value(7,DIG_PORT_3);		//nn::DIG_PORT_3
+				// DIG_PORT_4=0x0;
+				// DIG_PORT_4=0xff;
+				TxBufSetU8Value(9,DIG_PORT_4);		//oo::DIG_PORT_4
+				// DIG_PORT_5=0x0;
+				// DIG_PORT_5=0xff;
+				TxBufSetU8Value(11,DIG_PORT_5);		//pp::DIG_PORT_5
+				
+				// TxBufSetU8Value(13,digital_port_conf);	//qq::DIG_PORT_5
+				
+				tx.buf[13]=TX_STOP_FRAME;
+				// tx.size=14;
+				tx.idx=0; 	//transmition will use tx.idx )in TI0 case
+				TI0=1;		//start transmition					
+			}				
+		}break;	
+		case 0x17 :{	//set_virtual_address		<AA17bb\n -> {AA17bb\n								
+			if(rx.size==8){	
+				flashMemBuf[VAR128_VADDR]=GetU8FromRxBuf(5);		//value_u8(bb)
+				FLASH_Save();
+				Loopback();			
+			}		
+		}break;					
+		case 0x18 :{	//set_serial number		<AA18bbccddee\n -> {AA18bbccddee\n
+			if(rx.size==14){	
+				flashMemBuf[VAR128_SN_0]=GetU8FromRxBuf(5);		//value_u8(bb)
+				flashMemBuf[VAR128_SN_1]=GetU8FromRxBuf(7);		//value_u8(cc)
+				flashMemBuf[VAR128_SN_2]=GetU8FromRxBuf(9);		//value_u8(dd)
+				flashMemBuf[VAR128_SN_3]=GetU8FromRxBuf(11);		//value_u8(ee)
+				FLASH_Save();
+				Loopback();			
+			}	
+		}break;					
+		case 0x19 :{	//get_serial number		<AA19\n -> {bbccddee\n
+			if(rx.size==6){	
+				Tx_init();	//resets tx_buffer[] and tx_idx	
+				tx.buf[0]=TX_START_FRAME;
+				TxBufSetU8Value(1,flashMemBuf[VAR128_SN_0]);		//value_u8(bb)
+				TxBufSetU8Value(3,flashMemBuf[VAR128_SN_1]);		//value_u8(cc)
+				TxBufSetU8Value(5,flashMemBuf[VAR128_SN_2]);		//value_u8(dd)
+				TxBufSetU8Value(7,flashMemBuf[VAR128_SN_3]);		//value_u8(ee)
+				
+				tx.buf[9]=TX_STOP_FRAME;
+				// tx.size=10;
+				tx.idx=0; 	//transmition will use tx.idx )in TI0 case
+				TI0=1;		//start transmition		
+				// FLASH_Save();
+				// Loopback();				//copy rx to tx 
+				// Tx_init();	//resets tx_buffer[] and tx_idx	
+				// tx.buf[0]=TX_START_FRAME;
+				// TxBufSetU8Value(1,DOUT_PORT_0);		//ww												
+				// TxBufSetU8Value(3,DOUT_PORT_1);		//xx												
+				// TxBufSetU8Value(5,DOUT_PORT_2);		//yy												
+				// TxBufSetU8Value(7,DOUT_PORT_3);		//zz												
+				// tx.buf[9]=TX_STOP_FRAME;
+				// tx.size=10;
+				// tx.idx=0; 	//transmition will use tx.idx )in TI0 case
+				// TI0=1;		//start transmition					
+			}				
+		}break;				
+		case 0x20 :{	//set time <AA20aabbccdd>	
+			if(rx.size==14){	
+				//read value from msg 
+				tmp[0]=(u8)GetU8FromRxBuf(5);
+				tmp[1]=(u8)GetU8FromRxBuf(7);
+				tmp[2]=(u8)GetU8FromRxBuf(9);
+				tmp[3]=(u8)GetU8FromRxBuf(11);						
+
+				//set clock
+				time.sec=0;
+				time.sec+=(tmp[0]+0x0000L)<<24;
+				time.sec+=(tmp[1]+0x0000L)<<16;
+				time.sec+=(tmp[2]+0x0000L)<<8;
+				time.sec+=(tmp[3]+0x0000L);							
+
+				//read clock
+				tmp[0]=(u8)(time.sec>>24);
+				tmp[1]=(u8)(time.sec>>16);
+				tmp[2]=(u8)(time.sec>>8);
+				tmp[3]=(u8)(time.sec>>0);
+				
+				Tx_init();	//resets tx_buffer[] and tx_idx	
+				
+				TxBufSetU8Value(1,tmp[0]);	//cc
+				TxBufSetU8Value(3,tmp[1]);	//dd
+				TxBufSetU8Value(5,tmp[2]);	//ee
+				TxBufSetU8Value(7,tmp[3]);	//ff
+			
+				// TxBufSetU8Value(1,*(&time.sec+3));	//cc
+				// TxBufSetU8Value(3,*(&time.sec+2));	//dd
+				// TxBufSetU8Value(5,*(&time.sec+1));	//ee
+				// TxBufSetU8Value(7,*(&time.sec+0));	//ff
+				
+				tx.buf[9]=TX_STOP_FRAME;
+				tx.buf[0]=TX_START_FRAME;
+				// tx.size=10;
+				tx.idx=0; 	//transmition will use tx.idx )in TI0 case
+				TI0=1;		//start transmition
+				
+
+				// *(&time.sec+3)=(u8)GetU8FromRxBuf(7);
+				// *(&time.sec+2)=(u8)GetU8FromRxBuf(9);
+				// *(&time.sec+1)=(u8)GetU8FromRxBuf(11);
+				// *(&time.sec+0)=(u8)GetU8FromRxBuf(13);
+				// Loopback();				//copy rx to tx 	
+			}			
+		}break;				
+		case 0x21 :{	//get time ">xxAA21", "#ccddeeff"		
+			//read clock
+			tmp[0]=(u8)(time.sec>>24);
+			tmp[1]=(u8)(time.sec>>16);
+			tmp[2]=(u8)(time.sec>>8);
+			tmp[3]=(u8)(time.sec>>0);
+
+			Tx_init();	
+			TxBufSetU8Value(1,tmp[0]);	//cc
+			TxBufSetU8Value(3,tmp[1]);	//dd
+			TxBufSetU8Value(5,tmp[2]);	//ee
+			TxBufSetU8Value(7,tmp[3]);	//ff
+			
+			tx.buf[9]=TX_STOP_FRAME;
+			tx.buf[0]=TX_START_FRAME;
+			tx.idx=0; //transmition will use tx.idx )in TI0 case
+			TI0=1; //start transmition
+			
+		}break;
+		case 0x22 :{	//set value in scratch, index range is [00..99]		<AA22aabb\n -> {AA22aabb}
+			if(rx.size==10){	
+				tmp[0]=GetU8FromRxBuf(5);	//index (aa)
+				tmp[1]=GetU8FromRxBuf(7);	//u8 value (bb)
+				tmp[0]+=SCRATCH_MEM_OFFSET;
+				if(27<tmp[0] && tmp[0]<128){
+					flashMemBuf[tmp[0]]=tmp[1];		
+					FLASH_Save();
+					Loopback();				
+				}
+			}
+		}break;
+		case 0x23 :{	//get value from scratch, index range is [00..99]		<AA22aa\n -> {AA22aabb}
+			if(rx.size==8){	
+				tmp[0]=GetU8FromRxBuf(5);	//index (aa)
+				
+				tmp[0]+=SCRATCH_MEM_OFFSET;
+				if(27<tmp[0] && tmp[0]<128){
+					Tx_init();						//resets tx_buffer[] and tx_idx	
+					tx.buf[0]=TX_START_FRAME;
+					TxBufSetU8Value(1,flashMemBuf[tmp[0]]);		//nn::DIG_PORT_3
+					tx.buf[3]=TX_STOP_FRAME;
+					// tx.size=4;
+					// tx.idx=0; 	//transmition will use tx.idx )in TI0 case
+					TI0=1;		//start transmition	
+					
+				}
+			}	
+
+		}break;	
+	
+	}
+}
+
 /* application clock 1khz,T=1ms, function_duration~0.1[ms] */
 void _INT16Clock(void){
 	u8 i;
@@ -606,7 +857,6 @@ void _INT16Clock(void){
 		if(time.ms>999){		//increas timer_sec
 			time.ms=0;		
 			time.sec++;
-			flag_1sec=1;
 		}
 	}
 }
@@ -614,20 +864,14 @@ void _INT16Clock(void){
 void _INT4Uart0 (void){
 
 	u8 ch;
-	u16 val_16;
-	u8 val;
 	bit rx_finish=0;	//msg recieved flag <AABB..>
-	u8 tmp_1;
-	u8 tmp_2;
-	u8 tmp_3;
-	u8 tmp_4;
+	
 	EA=0;
 	if(RI0){	
 		RI0=0;			//reset interrupt bit
 		ch=SBUF0;		//copy register		
 		if((rx.idx<0)||(rx.idx>=RX_BUFFER_SIZE)){
 			Rx_init();
-			return;
 		}
 		else if(((ch>='0'&&ch<='9')||(ch>='A'&&ch<='F'))){	//detect valid char
 			rx.buf[rx.idx++]=ch;	
@@ -637,7 +881,7 @@ void _INT4Uart0 (void){
 			rx.buf[rx.idx++]=RX_START_FRAME;
 		}			
 		else if(ch==RX_STOP_FRAME){
-			rx.sum=Rx_get_u8(rx.idx-2);
+			// rx.sum=GetU8FromRxBuf(rx.idx-2);
 			rx.buf[rx.idx++]=RX_STOP_FRAME;
 			rx.size=rx.idx;
 			rx_finish=1;
@@ -661,303 +905,10 @@ void _INT4Uart0 (void){
 	
 	if(rx_finish){	
 		rx_finish=0;
-		rxmsg.addr=Rx_get_u8(RX_ADDRESS_CHAR);
-		rxmsg.type=Rx_get_u8(RX_COMMAND_CHAR);	
-		if((rxmsg.addr==var128[VAR128_VADDR])||(var128[VAR128_VADDR]==0xff)){
-			switch(rxmsg.type){
-				case 0xBB :{	//loop-back		<AABB...>		
-					Loopback();
-				}break;			
-				case 0x11 :{	//set dout		<AA11aabbccdd>		
-					if(rx.size==14){								
-					rxmsg.idx=Rx_get_u8(5);		//dout(aa)
-					rxmsg.val=Rx_get_u8(7);		//value(bb)
-					rxmsg.t1=Rx_get_u8(9);		//timer_high(cc)
-					rxmsg.t2=Rx_get_u8(11);		//timer_low(dd)
-					// Rxmsg_dout_wr:::::::::::::::::::
-					if(rxmsg.idx<MAX_DIGITAL_PINS){		
-						dout_timeout_sec[rxmsg.idx]=((u16)rxmsg.t1)<<8;
-						dout_timeout_sec[rxmsg.idx]+=rxmsg.t2;	
-						dout_timeout_ms[rxmsg.idx]=0;	
-						set_dout(rxmsg.idx,rxmsg.val);	
-					}
-					// Rxmsg_dout_wr:::::::::::::::::::
-					// Rxmsg_dout_wr();				
-					Loopback();				//copy rx to tx 	
-					}
-					
-				}break;							
-				case 0x13 :{	//get_ain		<AA13aabb> -> {qqww}
-					if(rx.size==10){								
-						rxmsg.idx	=Rx_get_u8(5);		//(aa)	analog input
-						rxmsg.t1	=Rx_get_u8(7);		//(bb)	analog gain1(000),2(001),4(010),8(011),16(10x),0.5(11x)
-						val_16		=get_ain(rxmsg.idx,rxmsg.t1);
-						val_16		=get_ain(rxmsg.idx,rxmsg.t1);
-						
-						Tx_init();	//resets tx_buffer[] and tx_idx	
-						Rx_init();	//resets tx_buffer[] and tx_idx	
-						Tx_set(1,BYTEHIGH(val_16));	//qq
-						Tx_set(3,BYTELOW(val_16));	//ww			
-						tx.buf[5]=TX_STOP_FRAME;
-						tx.buf[0]=TX_START_FRAME;
-						tx.size=6;
-						tx.idx=0; 	//transmition will use tx.idx )in TI0 case
-						TI0=1;		//start transmition					
-					}
-
-				}break;					
-				case 0x14 :{	//get_din		<AA14aa> -> {qq}
-									// read_ain()
-									// convert_to_ascii()
-									// send_string()
-					if(rx.size==8){								
-						rxmsg.idx	=Rx_get_u8(5);		//digital input(aa)
-
-						if(get_din(rxmsg.idx)){
-							val=0x01;
-						}
-						else{
-							val=0x00;
-						}
-						
-						Tx_init();	//resets tx_buffer[] and tx_idx	
-						tx.buf[0]=TX_START_FRAME;
-						Tx_set(1,*(&val));		//qq												
-						tx.buf[3]=TX_STOP_FRAME;
-						tx.size=4;
-						tx.idx=0; 	//transmition will use tx.idx )in TI0 case
-						TI0=1;		//start transmition					
-					}				
-				}break;					
-				case 0x15 :{	//set_aout		<AA15aabbcc> 
-					if(rx.size==12){								
-						rxmsg.idx			=Rx_get_u8(5);		//analog output(aa)
-						BYTEHIGH(val_16)	=Rx_get_u8(7);		//analog high register 0x[0..F](bb)
-						BYTELOW(val_16)		=Rx_get_u8(9);		//analog low register 0x[0..FF](ccc)
-						
-						set_aout(rxmsg.idx,val_16);
-						
-						Tx_init();	//resets tx_buffer[] and tx_idx	
-						Tx_set(1,BYTEHIGH(val_16));	//qq
-						Tx_set(3,BYTELOW(val_16));	//ww			
-						tx.buf[5]=TX_STOP_FRAME;
-						tx.buf[0]=TX_START_FRAME;
-						tx.size=6;
-						tx.idx=0; 	//transmition will use tx.idx )in TI0 case
-						TI0=1;		//start transmition					
-					}
-
-				}break;
-				case 0x16 :{	//get_digital ports <AA16> -> {kkllmmnnoopp}							
-					if(rx.size==6){									
-						Tx_init();	//resets tx_buffer[] and tx_idx	
-						tx.buf[0]=TX_START_FRAME;
-						
-						// DIG_PORT_0=0x0;
-						// DIG_PORT_0=0xff;
-						Tx_set(1,DIG_PORT_0);		//kk:DIG_PORT_0
-						// DIG_PORT_1=0x0;
-						// DIG_PORT_1=0xff;
-						Tx_set(3,DIG_PORT_1);		//ll:DIG_PORT_1
-						// DIG_PORT_2=0x0;
-						// DIG_PORT_2=0xff;
-						Tx_set(5,DIG_PORT_2);		//mm:DIG_PORT_2
-						// DIG_PORT_3=0x0;
-						// DIG_PORT_3=0xff;
-						Tx_set(7,DIG_PORT_3);		//nn::DIG_PORT_3
-						// DIG_PORT_4=0x0;
-						// DIG_PORT_4=0xff;
-						Tx_set(9,DIG_PORT_4);		//oo::DIG_PORT_4
-						// DIG_PORT_5=0x0;
-						// DIG_PORT_5=0xff;
-						Tx_set(11,DIG_PORT_5);		//pp::DIG_PORT_5
-						
-						// Tx_set(13,digital_port_conf);	//qq::DIG_PORT_5
-						
-						tx.buf[13]=TX_STOP_FRAME;
-						tx.size=14;
-						tx.idx=0; 	//transmition will use tx.idx )in TI0 case
-						TI0=1;		//start transmition					
-					}				
-				}break;	
-				case 0x17 :{	//set_virtual_address		<AA17bb\n -> {AA17bb\n								
-					if(rx.size==8){	
-						var128[VAR128_VADDR]=Rx_get_u8(5);		//value_u8(bb)
-						FLASH_Save();
-						Loopback();				//copy rx to tx 
-						// Tx_init();	//resets tx_buffer[] and tx_idx	
-						// tx.buf[0]=TX_START_FRAME;
-						// Tx_set(1,DOUT_PORT_0);		//ww												
-						// Tx_set(3,DOUT_PORT_1);		//xx												
-						// Tx_set(5,DOUT_PORT_2);		//yy												
-						// Tx_set(7,DOUT_PORT_3);		//zz												
-						// tx.buf[9]=TX_STOP_FRAME;
-						// tx.size=10;
-						// tx.idx=0; 	//transmition will use tx.idx )in TI0 case
-						// TI0=1;		//start transmition					
-					}//if(rx.size==10)				
-				}break;					
-				case 0x18 :{	//set_serial number		<AA18bbccddee\n -> {AA18bbccddee\n
-					if(rx.size==14){	
-						var128[VAR128_SN_0]=Rx_get_u8(5);		//value_u8(bb)
-						var128[VAR128_SN_1]=Rx_get_u8(7);		//value_u8(cc)
-						var128[VAR128_SN_2]=Rx_get_u8(9);		//value_u8(dd)
-						var128[VAR128_SN_3]=Rx_get_u8(11);		//value_u8(ee)
-						FLASH_Save();
-						Loopback();				//copy rx to tx 
-						// Tx_init();	//resets tx_buffer[] and tx_idx	
-						// tx.buf[0]=TX_START_FRAME;
-						// Tx_set(1,DOUT_PORT_0);		//ww												
-						// Tx_set(3,DOUT_PORT_1);		//xx												
-						// Tx_set(5,DOUT_PORT_2);		//yy												
-						// Tx_set(7,DOUT_PORT_3);		//zz												
-						// tx.buf[9]=TX_STOP_FRAME;
-						// tx.size=10;
-						// tx.idx=0; 	//transmition will use tx.idx )in TI0 case
-						// TI0=1;		//start transmition					
-					}//if(rx.size==10)				
-				}break;					
-				case 0x19 :{	//get_serial number		<AA19\n -> {bbccddee\n
-					if(rx.size==6){	
-						Tx_init();	//resets tx_buffer[] and tx_idx	
-						tx.buf[0]=TX_START_FRAME;
-						Tx_set(1,var128[VAR128_SN_0]);		//value_u8(bb)
-						Tx_set(3,var128[VAR128_SN_1]);		//value_u8(cc)
-						Tx_set(5,var128[VAR128_SN_2]);		//value_u8(dd)
-						Tx_set(7,var128[VAR128_SN_3]);		//value_u8(ee)
-						
-						tx.buf[9]=TX_STOP_FRAME;
-						tx.size=10;
-						tx.idx=0; 	//transmition will use tx.idx )in TI0 case
-						TI0=1;		//start transmition		
-						// FLASH_Save();
-						// Loopback();				//copy rx to tx 
-						// Tx_init();	//resets tx_buffer[] and tx_idx	
-						// tx.buf[0]=TX_START_FRAME;
-						// Tx_set(1,DOUT_PORT_0);		//ww												
-						// Tx_set(3,DOUT_PORT_1);		//xx												
-						// Tx_set(5,DOUT_PORT_2);		//yy												
-						// Tx_set(7,DOUT_PORT_3);		//zz												
-						// tx.buf[9]=TX_STOP_FRAME;
-						// tx.size=10;
-						// tx.idx=0; 	//transmition will use tx.idx )in TI0 case
-						// TI0=1;		//start transmition					
-					}//if(rx.size==10)				
-				}break;				
-				case 0x20 :{	//set time.sec	<AA20aabbccdd>	
-					if(rx.size==14){	
-					
-						time.sec=0;
-
-						//read value from msg 
-						tmp_1=(u8)Rx_get_u8(5);
-						tmp_2=(u8)Rx_get_u8(7);
-						tmp_3=(u8)Rx_get_u8(9);
-						tmp_4=(u8)Rx_get_u8(11);						
-						
-						//set clock
-						time.sec=0x0L;
-						time.sec+=(tmp_1+0x0000L)<<24;
-						time.sec+=(tmp_2+0x0000L)<<16;
-						time.sec+=(tmp_3+0x0000L)<<8;
-						time.sec+=(tmp_4+0x0000L);							
-						//set clock
-						// time.sec=0x0L;
-						// time.sec+=((u32)Rx_get_u8(7))<<24;
-						// time.sec+=((u32)Rx_get_u8(9))<<16;
-						// time.sec+=((u32)Rx_get_u8(11))<<8;
-						// time.sec+=((u32)Rx_get_u8(13));						
-						
-						//read clock
-						tmp_1=(u8)(time.sec>>24);
-						tmp_2=(u8)(time.sec>>16);
-						tmp_3=(u8)(time.sec>>8);
-						tmp_4=(u8)(time.sec>>0);
-						
-						Tx_init();	//resets tx_buffer[] and tx_idx	
-						
-						Tx_set(1,tmp_1);	//cc
-						Tx_set(3,tmp_2);	//dd
-						Tx_set(5,tmp_3);	//ee
-						Tx_set(7,tmp_4);	//ff
-					
-						// Tx_set(1,*(&time.sec+3));	//cc
-						// Tx_set(3,*(&time.sec+2));	//dd
-						// Tx_set(5,*(&time.sec+1));	//ee
-						// Tx_set(7,*(&time.sec+0));	//ff
-						
-						tx.buf[9]=TX_STOP_FRAME;
-						tx.buf[0]=TX_START_FRAME;
-						tx.size=10;
-						tx.idx=0; 	//transmition will use tx.idx )in TI0 case
-						TI0=1;		//start transmition
-						
-
-						// *(&time.sec+3)=(u8)Rx_get_u8(7);
-						// *(&time.sec+2)=(u8)Rx_get_u8(9);
-						// *(&time.sec+1)=(u8)Rx_get_u8(11);
-						// *(&time.sec+0)=(u8)Rx_get_u8(13);
-						// Loopback();				//copy rx to tx 	
-					}			
-				}break;				
-				case 0x21 :{	//get time.sec	<xxAA21>, tx={ccddeeff}
-
-					// tmp_1=BYTE3(time.sec);	
-					// tmp_2=BYTE4(time.sec);
-					// "aabbccdd"
-					
-					//read clock
-					tmp_1=(u8)(time.sec>>24);
-					tmp_2=(u8)(time.sec>>16);
-					tmp_3=(u8)(time.sec>>8);
-					tmp_4=(u8)(time.sec>>0);
-					
-					Tx_init();	//resets tx_buffer[] and tx_idx	
-					
-					Tx_set(1,tmp_1);	//cc
-					Tx_set(3,tmp_2);	//dd
-					Tx_set(5,tmp_3);	//ee
-					Tx_set(7,tmp_4);	//ff
-					
-					tx.buf[9]=TX_STOP_FRAME;
-					tx.buf[0]=TX_START_FRAME;
-					tx.size=10;
-					tx.idx=0; 	//transmition will use tx.idx )in TI0 case
-					TI0=1;		//start transmition
-					
-				}break;
-				case 0x22 :{	//set value in scratch, index range is [00..99]		<AA22aabb\n -> {AA22aabb}
-					if(rx.size==10){	
-						tmp_1=Rx_get_u8(5);	//index (aa)
-						tmp_2=Rx_get_u8(7);	//u8 value (bb)
-						tmp_1+=28;
-						if(27<tmp_1 && tmp_1<128){
-							var128[tmp_1]=tmp_2;		
-							FLASH_Save();
-							Loopback();				
-						}
-					}
-				}break;
-				case 0x23 :{	//get value from scratch, index range is [00..99]		<AA22aa\n -> {AA22aabb}
-					if(rx.size==8){	
-						tmp_1=Rx_get_u8(5);	//index (aa)
-						
-						tmp_1+=28;
-						if(27<tmp_1 && tmp_1<128){
-							Tx_init();						//resets tx_buffer[] and tx_idx	
-							tx.buf[0]=TX_START_FRAME;
-							Tx_set(1,var128[tmp_1]);		//nn::DIG_PORT_3
-							tx.buf[3]=TX_STOP_FRAME;
-							tx.size=4;
-							// tx.idx=0; 	//transmition will use tx.idx )in TI0 case
-							TI0=1;		//start transmition	
-							
-						}
-					}	
-
-				}break;	
-			
-			}
+		rxmsg.addr=GetU8FromRxBuf(RX_ADDRESS_CHAR);
+		rxmsg.type=GetU8FromRxBuf(RX_COMMAND_CHAR);	
+		if(rxmsg.addr==flashMemBuf[VAR128_VADDR]){
+			CommandProcessor();
 		}
 	}
 
