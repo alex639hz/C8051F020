@@ -43,7 +43,7 @@ void Loopback(){//loop back input or send msg
 	tx.idx=0; 	//transmition will use tx.idx )in TI0 case
 	TI0=1;		//start transmition
 
-}//Loopback
+}
 	
 void Rxmsg_dout_wr(){
 
@@ -139,14 +139,8 @@ void Tx_init(void){
 	tx.idx=0;
 }
 
+/* This routine erases the FLASH page containing the linear FLASH address */
 void FLASH_PageErase (u16 addr, bit SFLE){
-//-----------------------------------------------------------------------------
-// FLASH_PageErase
-//-----------------------------------------------------------------------------
-//
-// This routine erases the FLASH page containing the linear FLASH address
-// <addr>.
-//
    bit EA_SAVE = EA;                   // preserve EA
    char xdata * data pwrite;           // FLASH write pointer
 
@@ -173,17 +167,13 @@ void FLASH_PageErase (u16 addr, bit SFLE){
    EA = EA_SAVE;                       // restore interrupts
 }
 
+/* This routine writes <byte> to the linear FLASH address <addr> 
+Linear map is decoded as follows:
+Linear Address 0x 00000 - 0x 0FFFF        
+Device Address 0x 0000 - 0x FFFF
+*/
 void FLASH_ByteWrite(u16 addr,u8 byte, bit SFLE){
-//-----------------------------------------------------------------------------
-// FLASH_ByteWrite
-//-----------------------------------------------------------------------------
-//
-// This routine writes <byte> to the linear FLASH address <addr>.
-// Linear map is decoded as follows:
-// Linear Address       Device Address
-// ------------------------------------------------
-// 0x00000 - 0x0FFFF    0x0000 - 0xFFFF
-//
+
    bit EA_SAVE = EA;                   // preserve EA
    char xdata * data pwrite;           // FLASH write pointer
 
@@ -210,33 +200,23 @@ void FLASH_ByteWrite(u16 addr,u8 byte, bit SFLE){
    EA = EA_SAVE;                       // restore interrupts
 }
 
-u8 	 FLASH_ByteRead (u16 addr,bit SFLE){
-//-----------------------------------------------------------------------------
-// FLASH_ByteRead
-//-----------------------------------------------------------------------------
-//
-// This routine reads a <byte> from the linear FLASH address <addr>.
-//
-   bit EA_SAVE = EA;                   // preserve EA
-   u8 code * data pread;             // FLASH read pointer
+/* This routine reads a <byte> from the linear FLASH address <addr> */
+u8 FLASH_ByteRead (u16 addr,bit SFLE){
+   
+	 bit EA_SAVE = EA; // preserve EA
+   u8 code * data pread; // FLASH read pointer
    u8 byte;
 
-   EA = 0;                             // disable interrupts
-
+   EA = 0; // disable interrupts
    pread = (u8 code *) addr;
-
    if (SFLE) {
       PSCTL |= 0x04;                   // set SFLE
    }
-
    byte = *pread;                      // read the byte
-
    if (SFLE) {
       PSCTL &= ~0x04;                  // clear SFLE
    }
-
    EA = EA_SAVE;                       // restore interrupts
-
    return byte;
 }
 
@@ -259,7 +239,6 @@ void FLASH_Load(){
 		flashMemBuf[i]=FLASH_ByteRead(i,1);
 	}	
 }
-
 
 void ADC0_set_diff(u8 ch,u8 mode){//single-ended mode=0, differential mode=1
 	u8 cnt;
@@ -581,10 +560,28 @@ u16  get_ain(u8 ch,u8 gain){
 	return reg16;
 }
 
-void CommandProcessor(){
-	u16 val_16;
-	u8 tmp[4];
-	
+void ClearWatchdog(){
+	WDTCN=0xAD;
+	WDTCN=0xFF;
+}
+
+void DoutTimeoutMSCounter(void){
+	u8 i;
+	for(i=0;i<MAX_DIGITAL_PINS;i++){ //process dout timeout 
+		if(dout_timeout_sec[i]>0){ //check if digital pin have a timeout counter
+			dout_timeout_ms[i]++;
+			if(dout_timeout_ms[i]>999){
+				dout_timeout_ms[i]=0;
+				dout_timeout_sec[i]--;
+				if(dout_timeout_sec[i]==0){
+					set_dout(i,FALSE); //set digital pin to high-z (OFF)
+				}				
+			}	
+		}
+	}
+}
+
+void CommandProcessor(){	
 	switch(rxmsg.type){
 		case 0xBB :{	//loop-back		<AABB...>		
 			Loopback();
@@ -608,14 +605,15 @@ void CommandProcessor(){
 			
 		}break;							
 		case 0x13 :{	//get_ain		<AA13aabb> -> {qqww}
-			if(rx.size==10){								
+			if(rx.size==10){		
+				u16 u16Value;						
 				rxmsg.idx	= GetU8FromRxBuf(5);	//(aa)	analog input
 				rxmsg.t1 = GetU8FromRxBuf(7);	//(bb)	analog gain1(000),2(001),4(010),8(011),16(10x),0.5(11x)
-				val_16 = get_ain(rxmsg.idx,rxmsg.t1);
+				u16Value = get_ain(rxmsg.idx,rxmsg.t1);
 				Tx_init();	//resets tx_buffer[] and tx_idx	
 				Rx_init();	//resets tx_buffer[] and tx_idx	
-				TxBufSetU8Value(1,BYTEHIGH(val_16));	//qq
-				TxBufSetU8Value(3,BYTELOW(val_16));	//ww			
+				TxBufSetU8Value(1,BYTEHIGH(u16Value));	//qq
+				TxBufSetU8Value(3,BYTELOW(u16Value));	//ww			
 				tx.buf[5]=TX_STOP_FRAME;
 				tx.buf[0]=TX_START_FRAME;
 				// tx.size=6;
@@ -639,24 +637,21 @@ void CommandProcessor(){
 				TI0=1;		//start transmition					
 			}				
 		}break;					
-		case 0x15 :{	//set_aout		<AA15aabbcc> 
-			if(rx.size==12){								
-				rxmsg.idx			=GetU8FromRxBuf(5);		//analog output(aa)
-				BYTEHIGH(val_16)	=GetU8FromRxBuf(7);		//analog high register 0x[0..F](bb)
-				BYTELOW(val_16)		=GetU8FromRxBuf(9);		//analog low register 0x[0..FF](ccc)
-				
-				set_aout(rxmsg.idx,val_16);
-				
-				Tx_init();	//resets tx_buffer[] and tx_idx	
-				TxBufSetU8Value(1,BYTEHIGH(val_16));	//qq
-				TxBufSetU8Value(3,BYTELOW(val_16));	//ww			
+		case 0x15 :{	//set_aout >AA15aabbcc #qqww
+			if(rx.size==12){			
+				u16 u16Value;
+				rxmsg.idx	= GetU8FromRxBuf(5); //analog output(aa)
+				BYTEHIGH(u16Value) = GetU8FromRxBuf(RX_COMMAND_SETAOUT_HIGHBYTE); //(bb)
+				BYTELOW(u16Value) = GetU8FromRxBuf(RX_COMMAND_SETAOUT_LOWBYTE); //(cc)
+				set_aout(rxmsg.idx,u16Value);
+				Tx_init();
+				TxBufSetU8Value(1,BYTEHIGH(u16Value)); //qq
+				TxBufSetU8Value(3,BYTELOW(u16Value)); //ww			
 				tx.buf[5]=TX_STOP_FRAME;
 				tx.buf[0]=TX_START_FRAME;
-				// tx.size=6;
 				tx.idx=0; 	//transmition will use tx.idx )in TI0 case
 				TI0=1;		//start transmition					
 			}
-
 		}break;
 		case 0x16 :{	//get_digital ports <AA16> -> {kkllmmnnoopp}							
 			if(rx.size==6){									
@@ -692,174 +687,51 @@ void CommandProcessor(){
 		}break;	
 		case 0x17 :{	//set_virtual_address		<AA17bb\n -> {AA17bb\n								
 			if(rx.size==8){	
-				flashMemBuf[VAR128_VADDR]=GetU8FromRxBuf(5);		//value_u8(bb)
+				flashMemBuf[SCRATCH_MEM_INDEX_VIRTUAL_ADDRESS]=GetU8FromRxBuf(5);		//value_u8(bb)
 				FLASH_Save();
 				Loopback();			
 			}		
-		}break;					
-		case 0x18 :{	//set_serial number		<AA18bbccddee\n -> {AA18bbccddee\n
-			if(rx.size==14){	
-				flashMemBuf[VAR128_SN_0]=GetU8FromRxBuf(5);		//value_u8(bb)
-				flashMemBuf[VAR128_SN_1]=GetU8FromRxBuf(7);		//value_u8(cc)
-				flashMemBuf[VAR128_SN_2]=GetU8FromRxBuf(9);		//value_u8(dd)
-				flashMemBuf[VAR128_SN_3]=GetU8FromRxBuf(11);		//value_u8(ee)
-				FLASH_Save();
-				Loopback();			
-			}	
-		}break;					
-		case 0x19 :{	//get_serial number		<AA19\n -> {bbccddee\n
-			if(rx.size==6){	
-				Tx_init();	//resets tx_buffer[] and tx_idx	
-				tx.buf[0]=TX_START_FRAME;
-				TxBufSetU8Value(1,flashMemBuf[VAR128_SN_0]);		//value_u8(bb)
-				TxBufSetU8Value(3,flashMemBuf[VAR128_SN_1]);		//value_u8(cc)
-				TxBufSetU8Value(5,flashMemBuf[VAR128_SN_2]);		//value_u8(dd)
-				TxBufSetU8Value(7,flashMemBuf[VAR128_SN_3]);		//value_u8(ee)
-				
-				tx.buf[9]=TX_STOP_FRAME;
-				// tx.size=10;
-				tx.idx=0; 	//transmition will use tx.idx )in TI0 case
-				TI0=1;		//start transmition		
-				// FLASH_Save();
-				// Loopback();				//copy rx to tx 
-				// Tx_init();	//resets tx_buffer[] and tx_idx	
-				// tx.buf[0]=TX_START_FRAME;
-				// TxBufSetU8Value(1,DOUT_PORT_0);		//ww												
-				// TxBufSetU8Value(3,DOUT_PORT_1);		//xx												
-				// TxBufSetU8Value(5,DOUT_PORT_2);		//yy												
-				// TxBufSetU8Value(7,DOUT_PORT_3);		//zz												
-				// tx.buf[9]=TX_STOP_FRAME;
-				// tx.size=10;
-				// tx.idx=0; 	//transmition will use tx.idx )in TI0 case
-				// TI0=1;		//start transmition					
-			}				
-		}break;				
-		case 0x20 :{	//set time <AA20aabbccdd>	
-			if(rx.size==14){	
-				//read value from msg 
-				tmp[0]=(u8)GetU8FromRxBuf(5);
-				tmp[1]=(u8)GetU8FromRxBuf(7);
-				tmp[2]=(u8)GetU8FromRxBuf(9);
-				tmp[3]=(u8)GetU8FromRxBuf(11);						
-
-				//set clock
-				time.sec=0;
-				time.sec+=(tmp[0]+0x0000L)<<24;
-				time.sec+=(tmp[1]+0x0000L)<<16;
-				time.sec+=(tmp[2]+0x0000L)<<8;
-				time.sec+=(tmp[3]+0x0000L);							
-
-				//read clock
-				tmp[0]=(u8)(time.sec>>24);
-				tmp[1]=(u8)(time.sec>>16);
-				tmp[2]=(u8)(time.sec>>8);
-				tmp[3]=(u8)(time.sec>>0);
-				
-				Tx_init();	//resets tx_buffer[] and tx_idx	
-				
-				TxBufSetU8Value(1,tmp[0]);	//cc
-				TxBufSetU8Value(3,tmp[1]);	//dd
-				TxBufSetU8Value(5,tmp[2]);	//ee
-				TxBufSetU8Value(7,tmp[3]);	//ff
-			
-				// TxBufSetU8Value(1,*(&time.sec+3));	//cc
-				// TxBufSetU8Value(3,*(&time.sec+2));	//dd
-				// TxBufSetU8Value(5,*(&time.sec+1));	//ee
-				// TxBufSetU8Value(7,*(&time.sec+0));	//ff
-				
-				tx.buf[9]=TX_STOP_FRAME;
-				tx.buf[0]=TX_START_FRAME;
-				// tx.size=10;
-				tx.idx=0; 	//transmition will use tx.idx )in TI0 case
-				TI0=1;		//start transmition
-				
-
-				// *(&time.sec+3)=(u8)GetU8FromRxBuf(7);
-				// *(&time.sec+2)=(u8)GetU8FromRxBuf(9);
-				// *(&time.sec+1)=(u8)GetU8FromRxBuf(11);
-				// *(&time.sec+0)=(u8)GetU8FromRxBuf(13);
-				// Loopback();				//copy rx to tx 	
-			}			
-		}break;				
-		case 0x21 :{	//get time ">xxAA21", "#ccddeeff"		
-			//read clock
-			tmp[0]=(u8)(time.sec>>24);
-			tmp[1]=(u8)(time.sec>>16);
-			tmp[2]=(u8)(time.sec>>8);
-			tmp[3]=(u8)(time.sec>>0);
-
-			Tx_init();	
-			TxBufSetU8Value(1,tmp[0]);	//cc
-			TxBufSetU8Value(3,tmp[1]);	//dd
-			TxBufSetU8Value(5,tmp[2]);	//ee
-			TxBufSetU8Value(7,tmp[3]);	//ff
-			
-			tx.buf[9]=TX_STOP_FRAME;
-			tx.buf[0]=TX_START_FRAME;
-			tx.idx=0; //transmition will use tx.idx )in TI0 case
-			TI0=1; //start transmition
-			
-		}break;
-		case 0x22 :{	//set value in scratch, index range is [00..99]		<AA22aabb\n -> {AA22aabb}
+		}break;									
+		case 0x22: { //set value in scratch, index range is [00..99]		<AA22aabb\n -> {AA22aabb}
 			if(rx.size==10){	
-				tmp[0]=GetU8FromRxBuf(5);	//index (aa)
-				tmp[1]=GetU8FromRxBuf(7);	//u8 value (bb)
-				tmp[0]+=SCRATCH_MEM_OFFSET;
-				if(27<tmp[0] && tmp[0]<128){
-					flashMemBuf[tmp[0]]=tmp[1];		
+				u8 idx;
+				idx=GetU8FromRxBuf(RX_COMMAND_SETFLASH_IDX)+SCRATCH_MEM_START_INDEX;	// (aa)
+				if(idx<SCRATCH_MEM_END_INDEX){
+					flashMemBuf[idx]=GetU8FromRxBuf(RX_COMMAND_SETFLASH_VALUE);	//(bb)		
 					FLASH_Save();
 					Loopback();				
 				}
 			}
 		}break;
-		case 0x23 :{	//get value from scratch, index range is [00..99]		<AA22aa\n -> {AA22aabb}
+		case 0x23:{ //get value from scratch, index range is [00..99]		>AA22aa #AA22aabb
 			if(rx.size==8){	
-				tmp[0]=GetU8FromRxBuf(5);	//index (aa)
-				
-				tmp[0]+=SCRATCH_MEM_OFFSET;
-				if(27<tmp[0] && tmp[0]<128){
-					Tx_init();						//resets tx_buffer[] and tx_idx	
+				u8 idx=GetU8FromRxBuf(RX_COMMAND_GETFLASH_IDX)+SCRATCH_MEM_START_INDEX;	//(aa)
+				if(idx<SCRATCH_MEM_END_INDEX){
+					Tx_init();
 					tx.buf[0]=TX_START_FRAME;
-					TxBufSetU8Value(1,flashMemBuf[tmp[0]]);		//nn::DIG_PORT_3
+					TxBufSetU8Value(1,flashMemBuf[idx]); //nn::DIG_PORT_3
 					tx.buf[3]=TX_STOP_FRAME;
-					// tx.size=4;
-					// tx.idx=0; 	//transmition will use tx.idx )in TI0 case
 					TI0=1;		//start transmition	
 					
 				}
 			}	
-
 		}break;	
-	
 	}
 }
 
 /* application clock 1khz,T=1ms, function_duration~0.1[ms] */
 void _INT16Clock(void){
 	u8 i;
-	T4CON&=~0x80; 	//clear TF4 interrupt flag
-	WDTCN=0xAD;
-	WDTCN=0xFF;
-	{
-		time.ms++;			
-		for(i=0;i<MAX_DIGITAL_PINS;i++){	//process dout timeout 
-			if(dout_timeout_sec[i]>0){		//check if digital pin have a timeout counter
-				dout_timeout_ms[i]++;
-				if(dout_timeout_ms[i]>999){
-					dout_timeout_ms[i]=0;
-					dout_timeout_sec[i]--;
-					if(dout_timeout_sec[i]==0){
-						set_dout(i,FALSE);	//set digital pin to high-z (OFF)
-					}				
-				}	
-			}
-		}
-		if(time.ms>999){		//increas timer_sec
-			time.ms=0;		
-			time.sec++;
-		}
+	T4CON&=~0x80; //clear TF4 interrupt flag
+	ClearWatchdog();
+	time.ms++;			
+	DoutTimeoutMSCounter();
+	if(time.ms>999){ //increas timer_sec
+		time.ms=0;		
+		time.sec++;
 	}
 }
+
 /* application control communication */
 void _INT4Uart0 (void){
 
@@ -867,6 +739,7 @@ void _INT4Uart0 (void){
 	bit rx_finish=0;	//msg recieved flag <AABB..>
 	
 	EA=0;
+
 	if(RI0){	
 		RI0=0;			//reset interrupt bit
 		ch=SBUF0;		//copy register		
@@ -907,7 +780,7 @@ void _INT4Uart0 (void){
 		rx_finish=0;
 		rxmsg.addr=GetU8FromRxBuf(RX_ADDRESS_CHAR);
 		rxmsg.type=GetU8FromRxBuf(RX_COMMAND_CHAR);	
-		if(rxmsg.addr==flashMemBuf[VAR128_VADDR]){
+		if(rxmsg.addr==flashMemBuf[SCRATCH_MEM_INDEX_VIRTUAL_ADDRESS]){
 			CommandProcessor();
 		}
 	}

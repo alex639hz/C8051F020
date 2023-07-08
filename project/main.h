@@ -46,13 +46,20 @@
 #define RX_COMMAND_IDX 5
 #define RX_COMMAND_VALUE 7
 
+#define RX_COMMAND_SETAOUT_HIGHBYTE 7
+#define RX_COMMAND_SETAOUT_LOWBYTE 9
+#define RX_COMMAND_GETFLASH_IDX 5
+#define RX_COMMAND_SETFLASH_IDX 5
+#define RX_COMMAND_SETFLASH_VALUE 7
+
 /*var128 is a 128bytes buffer for flash memory*/
-#define	VAR128_VADDR	0		
-#define	SCRATCH_MEM_OFFSET	28		
-#define	VAR128_SN_0		1		
-#define	VAR128_SN_1		2	
-#define	VAR128_SN_2		3
-#define	VAR128_SN_3		4
+#define	SCRATCH_MEM_START_INDEX	28		
+#define	SCRATCH_MEM_END_INDEX	127		
+#define	SCRATCH_MEM_INDEX_VIRTUAL_ADDRESS	0		
+#define	SCRATCH_MEM_INDEX_SN1 1		
+#define	SCRATCH_MEM_INDEX_SN2		2	
+#define	SCRATCH_MEM_INDEX_SN3		3
+#define	SCRATCH_MEM_INDEX_SN4		4
 
 typedef unsigned char 	u8;
 typedef signed   char 	s8;
@@ -82,10 +89,6 @@ typedef struct timeType{
 	u16 ms;
 	u16 sec;
 }timeType;
-// typedef struct timerType{
-// 	u16 ms;
-// 	u16	sec;
-// }timerType;
 
 void Tx_init	();
 void Tx_set		(u8 i,u8 var);
